@@ -8,6 +8,17 @@ import {
   Share2,
   Star,
   ClipboardList,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Send,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  Filter,
+  MessageSquare,
+  Lightbulb,
+  ShieldAlert,
 } from "lucide-react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
@@ -453,6 +464,13 @@ const BusinessPage = () => {
   });
 
   const [showAllReviews, setShowAllReviews] = useState(false);
+  const [activeTab, setActiveTab] = useState<"reviews" | "timeline">("reviews");
+
+  // Decision Timeline filters
+  const [filterSentiment, setFilterSentiment] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterHumanReview, setFilterHumanReview] = useState<string>("all");
+  const [showTimelineFilters, setShowTimelineFilters] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -470,6 +488,7 @@ const BusinessPage = () => {
 
         const filtered = rawReviews
           .map((r: any) => ({
+            record_id: r.record_id || null,
             user: r.user || "Anonymous",
             uplaud: r.uplaud || "",
             date: r.date ? new Date(r.date) : null,
@@ -477,6 +496,14 @@ const BusinessPage = () => {
             location: r.location || "",
             category: r.category || "",
             business_name: r.businessName || "",
+            // NBA fields
+            sentiment: r.sentiment || null,
+            category_nba: r.category_nba || null,
+            next_best_action: r.next_best_action || null,
+            suggested_message: r.suggested_message || null,
+            human_rationale: r.human_rationale || null,
+            nba_status: r.nba_status || null,
+            needs_human_review: !!r.needs_human_review,
           }))
           .filter((r: any) => r.business_name && r.uplaud);
 
@@ -542,6 +569,160 @@ const BusinessPage = () => {
     const message = `Hey, check out Real Reviews for ${business.name} on Uplaud. It’s a platform where real people give honest reviews on WhatsApp:\n${link}`;
     const wa = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.location.href = wa;
+  }
+
+  /* ========= Decision Timeline filtered reviews ========= */
+  const timelineReviews = useMemo(() => {
+    return business.reviews.filter((r: any) => {
+      if (filterSentiment !== "all" && r.sentiment !== filterSentiment) return false;
+      if (filterStatus !== "all" && r.nba_status !== filterStatus) return false;
+      if (filterHumanReview === "yes" && !r.needs_human_review) return false;
+      if (filterHumanReview === "no" && r.needs_human_review) return false;
+      return true;
+    });
+  }, [business.reviews, filterSentiment, filterStatus, filterHumanReview]);
+
+  /* ========= DECISION TIMELINE CARD ========= */
+  function DecisionTimelineCard({ review }: { review: any }) {
+    const [expanded, setExpanded] = useState(false);
+
+    const sentimentConfig: Record<string, { bg: string; text: string; label: string; icon: React.ReactNode }> = {
+      high:   { bg: "bg-green-100",  text: "text-green-800",  label: "High",   icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
+      medium: { bg: "bg-amber-100",  text: "text-amber-800",  label: "Medium", icon: <Clock className="w-3.5 h-3.5" /> },
+      low:    { bg: "bg-red-100",    text: "text-red-800",    label: "Low",    icon: <AlertTriangle className="w-3.5 h-3.5" /> },
+    };
+
+    const statusConfig: Record<string, { bg: string; text: string; label: string; icon: React.ReactNode }> = {
+      pending_approval: { bg: "bg-yellow-100", text: "text-yellow-800", label: "Pending Approval", icon: <Clock className="w-3.5 h-3.5" /> },
+      approved:         { bg: "bg-blue-100",   text: "text-blue-800",   label: "Approved",         icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
+      sent:             { bg: "bg-green-100",  text: "text-green-800",  label: "Sent",             icon: <Send className="w-3.5 h-3.5" /> },
+      ignored:          { bg: "bg-gray-100",   text: "text-gray-600",   label: "Ignored",          icon: <XCircle className="w-3.5 h-3.5" /> },
+    };
+
+    const sc = review.sentiment ? sentimentConfig[review.sentiment] : null;
+    const st = review.nba_status ? statusConfig[review.nba_status] : null;
+    const hasDecision = review.sentiment || review.next_best_action || review.category_nba;
+
+    const formatAction = (action: string) => action.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+
+    return (
+      <div
+        className="rounded-2xl shadow overflow-hidden transition hover:shadow-xl"
+        style={{ background: "rgba(255,255,255,0.95)" }}
+      >
+        {/* ─── SIGNAL ─── */}
+        <div className="px-5 pt-5 pb-3">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold uppercase tracking-wider text-purple-600">Signal</span>
+                {review.needs_human_review && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">
+                    <ShieldAlert className="w-3 h-3" /> Human Review
+                  </span>
+                )}
+              </div>
+              <Link
+                to={`/profile/${slugify(review.user)}`}
+                className="font-bold text-base text-black hover:text-purple-700 hover:underline"
+              >
+                {review.user}
+              </Link>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {review.score != null && (
+                <span className="flex items-center gap-0.5">
+                  {Array.from({ length: review.score }).map((_, i) => (
+                    <span key={i} className="text-yellow-400 text-sm leading-none">★</span>
+                  ))}
+                  <span className="ml-1 text-lg leading-none">{emojiForScore(review.score)}</span>
+                </span>
+              )}
+              <span className="text-gray-400 text-xs">{formatDate(review.date)}</span>
+            </div>
+          </div>
+          {/* Review text */}
+          <div className="rounded-lg px-4 py-3 text-sm text-gray-800 break-words" style={{ background: "#DCF8C6" }}>
+            {review.uplaud}
+          </div>
+        </div>
+
+        {/* ─── DECISION ─── */}
+        <div className="px-5 py-3 border-t border-gray-100">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-purple-600">Decision</span>
+            {sc && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${sc.bg} ${sc.text}`}>
+                {sc.icon} {sc.label} sentiment
+              </span>
+            )}
+            {review.category_nba && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold">
+                <Tag className="w-3 h-3" /> {review.category_nba}
+              </span>
+            )}
+          </div>
+
+          {hasDecision ? (
+            <div className="space-y-2">
+              {review.next_best_action && (
+                <div className="flex items-start gap-2">
+                  <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-xs text-gray-500 font-medium">Next Best Action</span>
+                    <p className="text-sm font-semibold text-gray-900">{formatAction(review.next_best_action)}</p>
+                  </div>
+                </div>
+              )}
+
+              {review.suggested_message && (
+                <div className="flex items-start gap-2">
+                  <MessageSquare className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs text-gray-500 font-medium">Suggested Message</span>
+                    <p className={`text-sm text-gray-700 ${expanded ? "" : "line-clamp-2"}`}>
+                      {review.suggested_message}
+                    </p>
+                    {review.suggested_message.length > 120 && (
+                      <button
+                        onClick={() => setExpanded(!expanded)}
+                        className="text-xs text-purple-600 font-medium mt-0.5 hover:underline"
+                      >
+                        {expanded ? "Show less" : "Show more"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {review.human_rationale && (
+                <div className="flex items-start gap-2">
+                  <Lightbulb className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-xs text-gray-500 font-medium">Rationale</span>
+                    <p className="text-sm text-gray-600 italic">{review.human_rationale}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 italic">No recommendation yet.</p>
+          )}
+        </div>
+
+        {/* ─── OUTCOME ─── */}
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-purple-600">Outcome</span>
+          {st ? (
+            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${st.bg} ${st.text}`}>
+              {st.icon} {st.label}
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400 italic">No status set</span>
+          )}
+        </div>
+      </div>
+    );
   }
 
   /* ========= REVIEW CARD ========= */
@@ -689,40 +870,142 @@ const BusinessPage = () => {
           />
         </div>
 
-        {/* Reviews */}
+        {/* Tab switcher: Reviews / Decision Timeline */}
         <div
           className="rounded-2xl p-4"
           style={{ background: "transparent", borderColor: "transparent" }}
         >
           <div className="flex gap-6 mb-6 text-base font-semibold border-b border-white/30">
-            <span className="pb-2 -mb-[2px] px-1 text-white border-b-2 border-white">
+            <button
+              className={`pb-2 -mb-[2px] px-1 transition ${
+                activeTab === "reviews"
+                  ? "text-white border-b-2 border-white"
+                  : "text-white/50 hover:text-white/80"
+              }`}
+              onClick={() => setActiveTab("reviews")}
+            >
               Reviews
-            </span>
+            </button>
+            <button
+              className={`pb-2 -mb-[2px] px-1 transition ${
+                activeTab === "timeline"
+                  ? "text-white border-b-2 border-white"
+                  : "text-white/50 hover:text-white/80"
+              }`}
+              onClick={() => setActiveTab("timeline")}
+            >
+              Decision Timeline
+            </button>
           </div>
 
-          {loading ? (
-            <div className="text-center text-white/80 py-8">Loading reviews…</div>
-          ) : business.reviews.length === 0 ? (
-            <div className="text-center text-white/90 py-8">
-              No reviews found for this business.
-            </div>
-          ) : (
+          {/* ========= Reviews tab (unchanged) ========= */}
+          {activeTab === "reviews" && (
             <>
-              <div className="space-y-7">
-                {(showAllReviews ? business.reviews : business.reviews.slice(0, 5)).map(
-                  (review, idx) => (
-                    <ReviewCard key={idx} review={review} />
-                  )
+              {loading ? (
+                <div className="text-center text-white/80 py-8">Loading reviews…</div>
+              ) : business.reviews.length === 0 ? (
+                <div className="text-center text-white/90 py-8">
+                  No reviews found for this business.
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-7">
+                    {(showAllReviews ? business.reviews : business.reviews.slice(0, 5)).map(
+                      (review, idx) => (
+                        <ReviewCard key={idx} review={review} />
+                      )
+                    )}
+                  </div>
+                  {business.reviews.length > 5 && (
+                    <div className="flex justify-center mt-6">
+                      <button
+                        className="px-5 py-2 rounded-lg bg-white/15 text-white font-bold hover:bg-white/25 shadow transition"
+                        onClick={() => setShowAllReviews((prev) => !prev)}
+                      >
+                        {showAllReviews ? "Show Less" : "Load More Reviews"}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {/* ========= Decision Timeline tab ========= */}
+          {activeTab === "timeline" && (
+            <>
+              {/* Filter bar */}
+              <div className="mb-6">
+                <button
+                  onClick={() => setShowTimelineFilters((p) => !p)}
+                  className="flex items-center gap-2 text-white/80 hover:text-white text-sm font-medium transition mb-3"
+                >
+                  <Filter className="w-4 h-4" />
+                  Filters
+                  {showTimelineFilters ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+
+                {showTimelineFilters && (
+                  <div className="flex flex-wrap gap-3 p-4 rounded-xl" style={{ background: "rgba(255,255,255,0.1)" }}>
+                    {/* Sentiment filter */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-white/60 text-xs font-medium">Sentiment</label>
+                      <select
+                        value={filterSentiment}
+                        onChange={(e) => setFilterSentiment(e.target.value)}
+                        className="rounded-lg px-3 py-1.5 text-sm bg-white/90 text-gray-800 border-0 outline-none"
+                      >
+                        <option value="all">All</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                      </select>
+                    </div>
+
+                    {/* Status filter */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-white/60 text-xs font-medium">Status</label>
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="rounded-lg px-3 py-1.5 text-sm bg-white/90 text-gray-800 border-0 outline-none"
+                      >
+                        <option value="all">All</option>
+                        <option value="pending_approval">Pending Approval</option>
+                        <option value="approved">Approved</option>
+                        <option value="sent">Sent</option>
+                        <option value="ignored">Ignored</option>
+                      </select>
+                    </div>
+
+                    {/* Human review filter */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-white/60 text-xs font-medium">Needs Human Review</label>
+                      <select
+                        value={filterHumanReview}
+                        onChange={(e) => setFilterHumanReview(e.target.value)}
+                        className="rounded-lg px-3 py-1.5 text-sm bg-white/90 text-gray-800 border-0 outline-none"
+                      >
+                        <option value="all">All</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </div>
+                  </div>
                 )}
               </div>
-              {business.reviews.length > 5 && (
-                <div className="flex justify-center mt-6">
-                  <button
-                    className="px-5 py-2 rounded-lg bg-white/15 text-white font-bold hover:bg-white/25 shadow transition"
-                    onClick={() => setShowAllReviews((prev) => !prev)}
-                  >
-                    {showAllReviews ? "Show Less" : "Load More Reviews"}
-                  </button>
+
+              {loading ? (
+                <div className="text-center text-white/80 py-8">Loading…</div>
+              ) : timelineReviews.length === 0 ? (
+                <div className="text-center text-white/90 py-8">
+                  No reviews match the current filters.
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {timelineReviews.map((review, idx) => (
+                    <DecisionTimelineCard key={review.record_id || idx} review={review} />
+                  ))}
                 </div>
               )}
             </>

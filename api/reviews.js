@@ -38,7 +38,19 @@ export default async function handler(req, res) {
         (Array.isArray(f["Name_Creator"]) && f["Name_Creator"][0]) ? f["Name_Creator"][0] :
         (typeof f["Reviewer"]==="string" && f["Reviewer"].trim()) ? f["Reviewer"] :
         (Array.isArray(f["Reviewer"]) && f["Reviewer"][0]) ? f["Reviewer"][0] : "Anonymous";
+
+      // --- NBA / Decision Timeline fields (safe defaults for older rows) ---
+      const rawSentiment = (f["NBA_Sentiment"] || "").toString().toLowerCase().trim();
+      const sentiment = ["high","medium","low"].includes(rawSentiment) ? rawSentiment : null;
+
+      const rawStatus = (f["NBA_Status"] || "").toString().toLowerCase().trim().replace(/\s+/g, "_");
+      const nba_status = ["pending_approval","approved","sent","ignored"].includes(rawStatus) ? rawStatus : null;
+
+      // Airtable checkboxes return true/false; treat anything truthy as true
+      const needs_human_review = !!(f["NBA_Human_Review"]);
+
       return {
+        record_id: r.id || null,
         businessName: f.business_name || "",
         uplaud: f.Uplaud || "",
         date: f.Date_Added || null,
@@ -47,7 +59,15 @@ export default async function handler(req, res) {
         referralLink: f["ReferralLink"] || f["Referral Link"] || "",
         location: city,
         category: f.Category || "Other",
-        user
+        user,
+        // NBA fields
+        sentiment,
+        category_nba: f["NBA_Category"] || null,
+        next_best_action: f["NBA_Action"] || null,
+        suggested_message: f["NBA_Message"] || null,
+        human_rationale: f["NBA_Rationale"] || null,
+        nba_status,
+        needs_human_review,
       };
     }).filter(x => x.businessName && x.uplaud)
       .sort((a,b)=> new Date(b.date||0) - new Date(a.date||0));
