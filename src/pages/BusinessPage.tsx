@@ -24,6 +24,7 @@ import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
+import { DecisionTimeline } from "@/components/DecisionTimeline";
 
 /* ===================== Utils ===================== */
 function slugify(name = "") {
@@ -933,82 +934,12 @@ const BusinessPage = () => {
 
           {/* ========= Decision Timeline tab ========= */}
           {activeTab === "timeline" && (
-            <>
-              {/* Filter bar */}
-              <div className="mb-6">
-                <button
-                  onClick={() => setShowTimelineFilters((p) => !p)}
-                  className="flex items-center gap-2 text-white/80 hover:text-white text-sm font-medium transition mb-3"
-                >
-                  <Filter className="w-4 h-4" />
-                  Filters
-                  {showTimelineFilters ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
-
-                {showTimelineFilters && (
-                  <div className="flex flex-wrap gap-3 p-4 rounded-xl" style={{ background: "rgba(255,255,255,0.1)" }}>
-                    {/* Sentiment filter */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-white/60 text-xs font-medium">Sentiment</label>
-                      <select
-                        value={filterSentiment}
-                        onChange={(e) => setFilterSentiment(e.target.value)}
-                        className="rounded-lg px-3 py-1.5 text-sm bg-white/90 text-gray-800 border-0 outline-none"
-                      >
-                        <option value="all">All</option>
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                      </select>
-                    </div>
-
-                    {/* Status filter */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-white/60 text-xs font-medium">Status</label>
-                      <select
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value)}
-                        className="rounded-lg px-3 py-1.5 text-sm bg-white/90 text-gray-800 border-0 outline-none"
-                      >
-                        <option value="all">All</option>
-                        <option value="pending_approval">Pending Approval</option>
-                        <option value="approved">Approved</option>
-                        <option value="sent">Sent</option>
-                        <option value="ignored">Ignored</option>
-                      </select>
-                    </div>
-
-                    {/* Human review filter */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-white/60 text-xs font-medium">Needs Human Review</label>
-                      <select
-                        value={filterHumanReview}
-                        onChange={(e) => setFilterHumanReview(e.target.value)}
-                        className="rounded-lg px-3 py-1.5 text-sm bg-white/90 text-gray-800 border-0 outline-none"
-                      >
-                        <option value="all">All</option>
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {loading ? (
-                <div className="text-center text-white/80 py-8">Loading…</div>
-              ) : timelineReviews.length === 0 ? (
-                <div className="text-center text-white/90 py-8">
-                  No reviews match the current filters.
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {timelineReviews.map((review, idx) => (
-                    <DecisionTimelineCard key={review.record_id || idx} review={review} />
-                  ))}
-                </div>
-              )}
-            </>
+            <div className="bg-gray-50 rounded-2xl p-5">
+              <DecisionTimeline
+                reviews={business.reviews}
+                loading={loading}
+              />
+            </div>
           )}
         </div>
       </div>
