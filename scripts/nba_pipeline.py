@@ -30,32 +30,27 @@ try:
 except ImportError:
     pass
 
-AIRTABLE_API_KEY   = os.environ.get("AIRTABLE_API_KEY",
-    "patZS8GyNhkwoP4wY.2beddc214f4dd2a5e4c220ae654f62652a5e02a47bae2287c54fced7bb97c07e")
+AIRTABLE_API_KEY   = os.environ.get("AIRTABLE_API_KEY", "")
 AIRTABLE_BASE_ID   = os.environ.get("AIRTABLE_BASE_ID",   "appFUJWWTaoJ3YiWt")
 AIRTABLE_TABLE_ID  = os.environ.get("AIRTABLE_REVIEWS_TABLE", "tblef0n1hQXiKPHxI")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-BUSINESS_FILTER    = os.environ.get("BUSINESS_FILTER",    "")
-MAX_RECORDS        = int(os.environ.get("MAX_RECORDS",     "50"))
-DRY_RUN            = os.environ.get("DRY_RUN",            "0") == "1"
-USE_OLLAMA         = os.environ.get("USE_OLLAMA",          "1") == "1"
-OLLAMA_BASE        = os.environ.get("OLLAMA_BASE",         "http://localhost:11434")
-OLLAMA_MODEL       = os.environ.get("OLLAMA_MODEL",        "qwen2.5:latest")
+GROQ_API_KEY       = os.environ.get("GROQ_API_KEY", "")
+BUSINESS_FILTER    = os.environ.get("BUSINESS_FILTER", "")
+MAX_RECORDS        = int(os.environ.get("MAX_RECORDS", "50"))
+DRY_RUN            = os.environ.get("DRY_RUN", "0") == "1"
 
-# API base — Ollama by default, OpenRouter as fallback
-OAI_BASE = f"{OLLAMA_BASE}/v1" if USE_OLLAMA else "https://openrouter.ai/api/v1"
-MODEL    = OLLAMA_MODEL if USE_OLLAMA else "qwen/qwen3-14b:free"
+# Groq — fast, free tier, OpenAI-compatible
+OAI_BASE = "https://api.groq.com/openai/v1"
+MODEL    = "llama-3.3-70b-versatile"
 
 AT_BASE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
 AT_HEADERS  = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
-# Ollama doesn't need a real key; OpenRouter does
-_api_key = "ollama" if USE_OLLAMA else OPENROUTER_API_KEY
-OAI_HEADERS = {
-    "Authorization": f"Bearer {_api_key}",
-    "Content-Type": "application/json",
-    "HTTP-Referer": "https://uplaud.ai",
-    "X-Title": "Uplaud NBA Pipeline",
-}
+# Headers built lazily in call_qwen to pick up the env var correctly
+def _oai_headers():
+    return {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+        "User-Agent": "python-requests/2.31.0",
+    }
 
 # ── Prompt ─────────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = textwrap.dedent("""
@@ -100,23 +95,32 @@ def call_qwen(business_name: str, review_text: str, score) -> dict:
             {"role": "user",   "content": user_msg},
         ],
     }).encode()
-    req = urllib.request.Request(
-        f"{OAI_BASE}/chat/completions",
-        data=payload, headers=OAI_HEADERS, method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        body = json.load(resp)
-    content = body["choices"][0]["message"]["content"].strip()
-    # Strip any accidental markdown fences
-    if content.startswith("```"):
-        content = content.split("```")[1]
-        if content.startswith("json"):
-            content = content[4:]
-    return json.loads(content.strip())
+    # Retry up to 3 times with exponential backoff for rate limits
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(
+                f"{OAI_BASE}/chat/completions",
+                data=payload, headers=_oai_headers(), method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = json.load(resp)
+            content = body["choices"][0]["message"]["content"].strip()
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            return json.loads(content.strip())
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 2:
+                wait = 10 * (attempt + 1)
+                print(f"    rate limited, waiting {wait}s…")
+                time.sleep(wait)
+            else:
+                raise
 
 # ── Airtable helpers ───────────────────────────────────────────────────────
 def airtable_get(params: dict) -> dict:
-    qs = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
+    qs = urllib.parse.urlencode(params)
     url = f"{AT_BASE_URL}?{qs}"
     req = urllib.request.Request(url, headers=AT_HEADERS)
     with urllib.request.urlopen(req, timeout=15) as resp:
@@ -129,9 +133,9 @@ def fetch_reviews(max_records: int, business: str = "") -> list:
     no_nba = "{NBA_Sentiment}=''"
     if business:
         biz_filter = f"LOWER({{business_name}})=LOWER('{business}')"
-        formula = urllib.parse.quote(f"AND({no_nba},{biz_filter})")
+        formula = f"AND({no_nba},{biz_filter})"
     else:
-        formula = urllib.parse.quote(no_nba)
+        formula = no_nba
 
     while len(records) < max_records:
         params = {
@@ -157,11 +161,10 @@ def patch_record(record_id: str, fields: dict):
 
 # ── Main ───────────────────────────────────────────────────────────────────
 def main():
-    if not USE_OLLAMA and not OPENROUTER_API_KEY:
-        print("ERROR: OPENROUTER_API_KEY not set. Get a free key at openrouter.ai")
+    if not GROQ_API_KEY:
+        print("ERROR: GROQ_API_KEY not set.")
         sys.exit(1)
-    if USE_OLLAMA:
-        print(f"Using Ollama at {OLLAMA_BASE} with model '{OLLAMA_MODEL}'")
+    print(f"Using Groq with model '{MODEL}'")
 
     label = f" for '{BUSINESS_FILTER}'" if BUSINESS_FILTER else ""
     print(f"{'[DRY RUN] ' if DRY_RUN else ''}Fetching up to {MAX_RECORDS} unprocessed reviews{label}…")
@@ -228,7 +231,7 @@ def main():
                 print(f"    WRITE ERROR: {e}")
                 errors += 1
 
-        time.sleep(0.4)  # Airtable rate limit buffer
+        time.sleep(0.5)  # Groq free tier: 30 req/min, plenty of headroom
 
     print(f"\nDone.  ok={ok}  skipped={skipped}  errors={errors}")
 
